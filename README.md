@@ -83,7 +83,7 @@ Follow the [instructions to assign a system-wide shortcut that disables/enables 
 
 ### Notification pop-ups cause the top bar to hide.
 
-Using the extension [Panel OSD](https://extensions.gnome.org/extension/708/panel-osd/), you can configure notification pop-ups to show up in a different position (e.g. a few pixels down) where they won't overlap with the top bar.
+Use another extension (like [Just Perfection](https://extensions.gnome.org/extension/3843/just-perfection/) or [Notification Banner Reloaded](https://extensions.gnome.org/extension/4651/notification-banner-reloaded/)) to configure the position where notification pop-ups show up, e.g. at the bottom of the screen or just a few pixels down where they won't overlap with the top bar.
 
 ### The panel overlaps with the dash/dock.
 
