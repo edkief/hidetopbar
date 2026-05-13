@@ -10,7 +10,7 @@ In the extension's preferences, different behaviors can be specified: unhiding o
 Installation from extensions.gnome.org
 --------------------------------------
 
-Unless you are on Debian or Ubuntu (see section below), the recommended way of installing Hide Top Bar is via the official builds on
+Unless you are on Debian (see section below), the recommended way of installing Hide Top Bar is via the official builds on
 [extensions.gnome.org/.../hide-top-bar/](https://extensions.gnome.org/extension/545/hide-top-bar/).
 
 If you're installing via a Chrome browser, make sure you read the
