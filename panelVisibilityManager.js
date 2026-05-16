@@ -54,6 +54,13 @@ export class PanelVisibilityManager {
         this._animationActive = false;
         this._shortcutTimeout = null;
 
+        this._seat = Clutter.get_default_backend().get_default_seat();
+        this._inTabletMode = this._seat.touch_mode;
+        this._tabletModeSignal = this._seat.connect(
+            'notify::touch-mode',
+            this._onTabletModeChanged.bind(this)
+        );
+
         this._desktopIconsUsableArea = (
             new DesktopIconsIntegration.DesktopIconsUsableAreaClass()
         );
@@ -97,6 +104,8 @@ export class PanelVisibilityManager {
     hide(animationTime, trigger) {
         DEBUG("hide(" + trigger + ")");
         if(this._preventHide) return;
+        if(this._inTabletMode
+           && this._settings.get_boolean('show-in-tablet-mode')) return;
 
         let anchor_y = PanelBox.get_pivot_point()[1],
             delta_y = -PanelBox.height;
@@ -360,6 +369,21 @@ export class PanelVisibilityManager {
         }
     }
 
+    _onTabletModeChanged() {
+        this._inTabletMode = this._seat.touch_mode;
+        if(this._inTabletMode && this._settings.get_boolean('show-in-tablet-mode')) {
+            this.show(
+                this._settings.get_double('animation-time-autohide'),
+                "tablet-mode-entered"
+            );
+        } else if(!this._inTabletMode) {
+            this.hide(
+                this._settings.get_double('animation-time-autohide'),
+                "tablet-mode-left"
+            );
+        }
+    }
+
     _updateSettingsHotCorner() {
         this.hide(0.1, "hot-corner-setting-changed");
     }
@@ -529,6 +553,11 @@ export class PanelVisibilityManager {
                 this._settings,
                 'changed::enable-active-window',
                 this._updateIntellihideStatus.bind(this)
+            ],
+            [
+                this._settings,
+                'changed::show-in-tablet-mode',
+                this._onTabletModeChanged.bind(this)
             ]
         );
     }
@@ -538,6 +567,7 @@ export class PanelVisibilityManager {
             GLib.source_remove(this._bindTimeoutId);
             this._bindTimeoutId = 0;
         }
+        this._seat.disconnect(this._tabletModeSignal);
         this._intellihide.destroy();
         this._signalsHandler.destroy();
         Main.wm.removeKeybinding("shortcut-keybind");

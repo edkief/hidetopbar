@@ -115,5 +115,13 @@
         When enabled, the panel will be visible in overview.
       </description>
     </key>
+    <key name="show-in-tablet-mode" type="b">
+      <default>true</default>
+      <summary>Show panel in tablet mode</summary>
+      <description>
+        When enabled, the panel will always be visible when the device is in
+        tablet mode (touch mode active).
+      </description>
+    </key>
   </schema>
 </schemalist>
