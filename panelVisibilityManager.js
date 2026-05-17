@@ -60,15 +60,18 @@ export class PanelVisibilityManager {
             'notify::touch-mode',
             this._onTabletModeChanged.bind(this)
         );
+        this._strutsReserved = false;
+        this._inTabletOverlay = false;
+        this._tabletOverlayReady = false;
+        this._tabletMenuEvent = null;
+        this._tabletTouchSignalId = null;
+        this._tabletOutsideSignalId = null;
+        this._tabletAutoHideId = null;
 
         this._desktopIconsUsableArea = (
             new DesktopIconsIntegration.DesktopIconsUsableAreaClass()
         );
-        Main.layoutManager.removeChrome(PanelBox);
-        Main.layoutManager.addChrome(PanelBox, {
-            affectsStruts: false,
-            trackFullscreen: true
-        });
+        this._setAffectsStruts(false);
 
         // We lost the original notification's position because of
         // PanelBox->affectsStruts = false and now it appears beneath the
@@ -169,6 +172,8 @@ export class PanelVisibilityManager {
                 onComplete: () => {
                     this._animationActive = false;
                     this._updateStaticBox();
+
+                    if (this._inTabletOverlay) return;
 
                     const mouse = global.get_pointer();
 
@@ -369,19 +374,196 @@ export class PanelVisibilityManager {
         }
     }
 
+    _setAffectsStruts(value) {
+        Main.layoutManager.removeChrome(PanelBox);
+        Main.layoutManager.addChrome(PanelBox, {
+            affectsStruts: value,
+            trackFullscreen: true
+        });
+    }
+
     _onTabletModeChanged() {
         this._inTabletMode = this._seat.touch_mode;
-        if(this._inTabletMode && this._settings.get_boolean('show-in-tablet-mode')) {
-            this.show(
-                this._settings.get_double('animation-time-autohide'),
-                "tablet-mode-entered"
-            );
-        } else if(!this._inTabletMode) {
+        const showInTablet = this._settings.get_boolean('show-in-tablet-mode');
+
+        if (this._inTabletMode) {
+            if (showInTablet) {
+                this._cancelTabletAutoHide();
+                this._disarmTabletOutsideListener();
+                this._disarmTabletTouchListener();
+                if (this._animationActive) {
+                    PanelBox.remove_all_transitions();
+                    this._animationActive = false;
+                }
+                this._setAffectsStruts(true);
+                this._strutsReserved = true;
+                this.show(
+                    this._settings.get_double('animation-time-autohide'),
+                    'tablet-mode-entered'
+                );
+            } else {
+                if (this._strutsReserved) {
+                    if (this._animationActive) {
+                        PanelBox.remove_all_transitions();
+                        this._animationActive = false;
+                    }
+                    this._setAffectsStruts(false);
+                    this._strutsReserved = false;
+                }
+                this.hide(
+                    this._settings.get_double('animation-time-autohide'),
+                    'tablet-mode-entered'
+                );
+                this._armTabletTouchListener();
+            }
+        } else {
+            this._inTabletOverlay = false;
+            this._tabletOverlayReady = false;
+            this._cancelTabletAutoHide();
+            this._disarmTabletOutsideListener();
+            this._disarmTabletTouchListener();
+            if (this._strutsReserved) {
+                if (this._animationActive) {
+                    PanelBox.remove_all_transitions();
+                    this._animationActive = false;
+                }
+                this._setAffectsStruts(false);
+                this._strutsReserved = false;
+            }
             this.hide(
                 this._settings.get_double('animation-time-autohide'),
-                "tablet-mode-left"
+                'tablet-mode-left'
             );
         }
+    }
+
+    _armTabletTouchListener() {
+        if (this._tabletTouchSignalId) return;
+        this._tabletTouchSignalId = global.stage.connect(
+            'captured-event',
+            this._onTabletEdgeTouch.bind(this)
+        );
+    }
+
+    _disarmTabletTouchListener() {
+        if (this._tabletTouchSignalId) {
+            global.stage.disconnect(this._tabletTouchSignalId);
+            this._tabletTouchSignalId = null;
+        }
+    }
+
+    _onTabletEdgeTouch(stage, event) {
+        if (event.type() !== Clutter.EventType.TOUCH_BEGIN)
+            return Clutter.EVENT_PROPAGATE;
+        if (!this._inTabletMode)
+            return Clutter.EVENT_PROPAGATE;
+        if (PanelBox.visible && PanelBox.y >= this._base_y)
+            return Clutter.EVENT_PROPAGATE;
+
+        const [x, y] = event.get_coords();
+        if (y < 10)
+            this._revealTabletOverlay();
+
+        return Clutter.EVENT_PROPAGATE;
+    }
+
+    _revealTabletOverlay() {
+        this._inTabletOverlay = true;
+        this._tabletOverlayReady = false;
+        this.show(
+            this._settings.get_double('animation-time-autohide'),
+            'tablet-edge-swipe'
+        );
+        this._startTabletAutoHide();
+        this._armTabletOutsideListener();
+        GLib.timeout_add(GLib.PRIORITY_DEFAULT, 500, () => {
+            this._tabletOverlayReady = true;
+            return GLib.SOURCE_REMOVE;
+        });
+    }
+
+    _startTabletAutoHide() {
+        this._cancelTabletAutoHide();
+        this._tabletAutoHideId = GLib.timeout_add(
+            GLib.PRIORITY_DEFAULT,
+            5000,
+            () => {
+                this._tabletAutoHideId = null;
+                this._inTabletOverlay = false;
+                this._tabletOverlayReady = false;
+                this._disarmTabletOutsideListener();
+                this.hide(
+                    this._settings.get_double('animation-time-autohide'),
+                    'tablet-auto-hide'
+                );
+                return GLib.SOURCE_REMOVE;
+            }
+        );
+    }
+
+    _cancelTabletAutoHide() {
+        if (this._tabletAutoHideId) {
+            GLib.source_remove(this._tabletAutoHideId);
+            this._tabletAutoHideId = null;
+        }
+    }
+
+    _armTabletOutsideListener() {
+        if (this._tabletOutsideSignalId) return;
+        this._tabletOutsideSignalId = global.stage.connect(
+            'captured-event',
+            this._onTabletOutsideTouch.bind(this)
+        );
+    }
+
+    _disarmTabletOutsideListener() {
+        if (this._tabletOutsideSignalId) {
+            global.stage.disconnect(this._tabletOutsideSignalId);
+            this._tabletOutsideSignalId = null;
+        }
+    }
+
+    _onTabletOutsideTouch(stage, event) {
+        if (event.type() !== Clutter.EventType.TOUCH_BEGIN)
+            return Clutter.EVENT_PROPAGATE;
+
+        const [, y] = event.get_coords();
+        if (y < PanelBox.height) {
+            // Touch is within the panel area — cancel the auto-hide timer so the
+            // bar stays up until the user touches outside, but only once the
+            // 500ms debounce has elapsed (to ignore the triggering swipe itself)
+            if (this._tabletOverlayReady)
+                this._cancelTabletAutoHide();
+            return Clutter.EVENT_PROPAGATE;
+        }
+
+        // Touch is outside the panel — defer if a panel menu is open,
+        // otherwise hide immediately
+        const activeMenu = Main.panel.menuManager.activeMenu;
+        if (activeMenu) {
+            this._cancelTabletAutoHide();
+            this._disarmTabletOutsideListener();
+            this._tabletMenuEvent = activeMenu.connect(
+                'open-state-changed',
+                (menu, open) => {
+                    if (!open) {
+                        menu.disconnect(this._tabletMenuEvent);
+                        this._tabletMenuEvent = null;
+                        this._inTabletOverlay = false;
+                        this._tabletOverlayReady = false;
+                        this.hide(0, 'tablet-touch-outside');
+                    }
+                }
+            );
+            return Clutter.EVENT_PROPAGATE;
+        }
+
+        this._inTabletOverlay = false;
+        this._tabletOverlayReady = false;
+        this._cancelTabletAutoHide();
+        this._disarmTabletOutsideListener();
+        this.hide(0, 'tablet-touch-outside');
+        return Clutter.EVENT_PROPAGATE;
     }
 
     _updateSettingsHotCorner() {
@@ -567,6 +749,16 @@ export class PanelVisibilityManager {
             GLib.source_remove(this._bindTimeoutId);
             this._bindTimeoutId = 0;
         }
+        this._inTabletOverlay = false;
+        this._tabletOverlayReady = false;
+        if (this._tabletMenuEvent) {
+            Main.panel.menuManager.activeMenu?.disconnect(this._tabletMenuEvent);
+            this._tabletMenuEvent = null;
+        }
+        this._cancelTabletAutoHide();
+        this._disarmTabletOutsideListener();
+        this._disarmTabletTouchListener();
+        this._strutsReserved = false;
         this._seat.disconnect(this._tabletModeSignal);
         this._intellihide.destroy();
         this._signalsHandler.destroy();
@@ -579,11 +771,7 @@ export class PanelVisibilityManager {
         MessageTray._bannerBin.ease = this._oldEase;
         this.show(0, "destroy");
 
-        Main.layoutManager.removeChrome(PanelBox);
-        Main.layoutManager.addChrome(PanelBox, {
-            affectsStruts: true,
-            trackFullscreen: true
-        });
+        this._setAffectsStruts(true);
         this._desktopIconsUsableArea.destroy();
         this._desktopIconsUsableArea = null;
     }
