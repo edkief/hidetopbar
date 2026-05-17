@@ -32,7 +32,7 @@ import * as Signals from 'resource:///org/gnome/shell/misc/signals.js';
 import * as Convenience from './convenience.js';
 
 // A good compromise between reactivity and efficiency; to be tuned.
-export const INTELLIHIDE_CHECK_INTERVAL = 100;
+export const INTELLIHIDE_CHECK_INTERVAL = 250;
 
 export const OverlapStatus = {
     UNDEFINED: -1,
