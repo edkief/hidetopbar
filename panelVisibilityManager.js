@@ -109,6 +109,7 @@ export class PanelVisibilityManager {
         if(this._preventHide) return;
         if(this._inTabletMode
            && this._settings.get_boolean('show-in-tablet-mode')) return;
+        if(this._inTabletOverlay) return;
 
         let anchor_y = PanelBox.get_pivot_point()[1],
             delta_y = -PanelBox.height;
